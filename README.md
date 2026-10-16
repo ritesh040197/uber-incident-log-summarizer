@@ -5,8 +5,12 @@ _TODO: project description._
 ## Log format notes
 
 The dump carries a `.jsonl` extension but is a single pretty-printed JSON array:
-it opens with `[`, closes with `]`, and every record line ends with a comma.
-The parser strips those structural artifacts per line.
+it opens with `[`, closes with `]`, and every element line ends with one
+separator comma. The parser recognizes that one separator comma as the known
+format — it does **not** repair a line before judging it. A line is accepted as
+a record only when it is a JSON object followed by at most one trailing comma;
+a truncated object, a stack-trace line, a stray/doubled comma, or a non-object
+is judged malformed rather than rewritten into something parseable.
 
 Each record is a JSON object with eight fields. Four are **required** — a record
 is unusable for summarization or error counting without them — and four are
@@ -32,21 +36,31 @@ The `level` field takes four distinct values, exactly as they appear in the file
 - `WARN`
 - `DEBUG`
 
-Every physical line is accounted for in one of four buckets, which reconcile to
-the file's total line count:
+Every physical line is one of two things, and the two close on the file's total
+line count — the sum a reader actually checks:
 
-    total = processed + rejected + malformed + skipped
+    total = processed + malformed
 
-- `processed` — valid record carrying every required field
-- `rejected` — valid JSON but missing a required field
-- `malformed` — a content line that is not valid JSON
-- `skipped` — blank lines and the array's `[` / `]` wrapper lines
+- `processed` — a usable record: valid JSON object with every required field
+- `malformed` — any line that is not a usable record
 
-In the current dump (45 physical lines), 0 lines are malformed JSON, but **1
-record is rejected**: an `ERROR` line from `trip-dispatch` that is missing its
-`message` (and `duration_ms`). It is valid JSON, so a parser that only checked
-JSON-validity would miscount it as a clean processed error — hence the
-required-field check above.
+`malformed` is broken down underneath by reason (invalid JSON, missing a
+required field, or a structural/blank line), but that split is detail; the
+headline numbers close on `processed + malformed`.
+
+### What's actually in this dump
+
+The whole file parses as a valid 43-element JSON array (`json.loads` on the raw
+text succeeds), which means it contains **no** truncated object, stack-trace
+line, or stray trailing-comma line — any of those would break that parse. Its
+only data defect is **one record missing a required field**: an `ERROR` line
+from `trip-dispatch` (line 44) that has no `message` (and no `duration_ms`). It
+is valid JSON, so a parser that only checked JSON-validity would miscount it as
+a clean processed error — hence the required-field check above.
+
+The `malformed: 0` for invalid JSON is not an untested claim: `test_parse_logs.py`
+plants a truncated object, a stack-trace line, and a doubled-comma line and
+asserts each lands in `malformed` (never `processed`). See [Testing](#testing).
 
 ## Usage
 
@@ -70,12 +84,17 @@ Output on the current dump:
 ```
 total:     45
 processed: 42
-errors:    9
-rejected:  1
-malformed: 0
-skipped:   2
-reconciles: True (45 == 45)
+malformed: 3
+  - invalid JSON:            0
+  - missing required field:  1
+  - structural (wrapper/blank): 2
+errors (of processed):     9
+check: processed + malformed = 42 + 3 = 45 == total 45  [OK]
 ```
+
+`processed (42) + malformed (3) = 45 = total`. The three malformed are the one
+missing-field record plus the two array-envelope lines (`[` and `]`); the
+breakdown says which is which.
 
 ## Normalisation rules
 
@@ -87,7 +106,15 @@ _TODO: describe the summary output format._
 
 ## Testing
 
-_TODO: describe how to run the tests._
+```bash
+python3 test_parse_logs.py
+```
+
+The tests plant one of each bad-line type — a truncated object, a stack-trace
+line, a doubled trailing comma, and a record missing a required field — and
+assert each is counted as malformed and none leaks into `processed`. This is
+what backs the `invalid JSON: 0` on the real dump: the zero has been run against
+known bad lines, not merely observed.
 
 ## Docker
 
