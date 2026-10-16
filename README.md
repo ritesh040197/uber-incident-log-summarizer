@@ -2,6 +2,32 @@
 
 _TODO: project description._
 
+## Log format notes
+
+The dump carries a `.jsonl` extension but is a single pretty-printed JSON array:
+it opens with `[`, closes with `]`, and every record line ends with a comma.
+The parser strips those structural artifacts per line.
+
+Each record is a JSON object with eight fields:
+
+- `timestamp`
+- `level`
+- `service`
+- `host`
+- `request_id`
+- `trip_id`
+- `message`
+- `duration_ms`
+
+The `level` field takes four distinct values, exactly as they appear in the file:
+
+- `INFO`
+- `ERROR`
+- `WARN`
+- `DEBUG`
+
+No malformed lines were found in the current dump (malformed count: 0).
+
 ## Usage
 
 Run the streaming log parser, passing the log file path as an argument:
