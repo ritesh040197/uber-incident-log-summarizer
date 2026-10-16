@@ -6,7 +6,14 @@ _TODO: project description._
 
 The dump carries a `.jsonl` extension but is a single pretty-printed JSON array:
 it opens with `[`, closes with `]`, and every element line ends with one
-separator comma. The parser recognizes that one separator comma as the known
+separator comma. That the file really is one JSON array — not independent JSONL
+— is the premise the comma-strip rule rests on, so it is not asserted here but
+**checked against the committed file** by `test_dump_really_is_a_json_array`
+(see [Testing](#testing)): the whole file must parse as a JSON array of objects,
+and the streaming parser must recover exactly those elements. If the file ever
+stops being an array, that test fails and the rule loses its justification.
+
+Given that premise, the parser recognizes the one separator comma as the known
 format — it does **not** repair a line before judging it. A line is accepted as
 a record only when it is a JSON object followed by at most one trailing comma;
 a truncated object, a stack-trace line, a stray/doubled comma, or a non-object
@@ -50,9 +57,10 @@ headline numbers close on `processed + malformed`.
 
 ### What's actually in this dump
 
-The whole file parses as a valid 43-element JSON array (`json.loads` on the raw
-text succeeds), which means it contains **no** truncated object, stack-trace
-line, or stray trailing-comma line — any of those would break that parse. Its
+The whole file parses as a valid 43-element JSON array — verified by
+`test_dump_really_is_a_json_array`, not just claimed — which means it contains
+**no** truncated object, stack-trace line, or stray trailing-comma line; any of
+those would break that parse. Its
 only data defect is **one record missing a required field**: an `ERROR` line
 from `trip-dispatch` (line 44) that has no `message` (and no `duration_ms`). It
 is valid JSON, so a parser that only checked JSON-validity would miscount it as
@@ -115,6 +123,13 @@ line, a doubled trailing comma, and a record missing a required field — and
 assert each is counted as malformed and none leaks into `processed`. This is
 what backs the `invalid JSON: 0` on the real dump: the zero has been run against
 known bad lines, not merely observed.
+
+`test_dump_really_is_a_json_array` runs against the committed dump itself: it is
+the evidence for the comma-strip rule. It asserts the whole file parses as a
+JSON array of objects and that the streaming parser recovers exactly those
+elements (`invalid JSON: 0`, and array length == processed + missing). The rule
+that lets a trailing comma through is therefore justified by a check anyone can
+re-run, not by a claim in this README.
 
 ## Docker
 

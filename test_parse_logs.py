@@ -8,10 +8,21 @@ line slip into `processed` fails loudly here.
 
 Run:  python3 test_parse_logs.py
 """
+import glob
+import json
 import os
 import tempfile
 
 import parse_logs
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def find_dump():
+    """Locate the committed dump next to this test."""
+    matches = sorted(glob.glob(os.path.join(HERE, "*.jsonl")))
+    assert matches, "no .jsonl dump found next to the tests"
+    return matches[0]
 
 
 def run(lines):
@@ -68,8 +79,38 @@ def test_counts_close_on_total():
     print("PASS reconciliation: processed + malformed == total")
 
 
+def test_dump_really_is_a_json_array():
+    """Evidence for the comma-strip rule, run against the real file.
+
+    The parser accepts one trailing comma per line because the dump is a single
+    JSON array, not independent JSONL. That assumption is the thing that lets a
+    trailing comma through quietly, so it is checked here against the committed
+    file rather than asserted in prose: the whole file must parse as a JSON
+    array of objects. If the file ever stops being an array, this fails and the
+    comma-strip rule loses its justification.
+    """
+    dump = find_dump()
+    with open(dump, encoding="utf-8") as f:
+        raw = f.read()
+
+    arr = json.loads(raw)  # raises if the dump is not valid JSON as a whole
+    assert isinstance(arr, list), f"dump is not a JSON array: {type(arr).__name__}"
+    assert arr and all(isinstance(x, dict) for x in arr), "array has non-object elements"
+
+    # Bind the authoritative array parse to the streaming parser: every array
+    # element is one content line, each either processed or missing-a-required-
+    # field, and no element line is invalid JSON. If the comma-strip rule let a
+    # line through that the array parse would not, these would disagree.
+    c = parse_logs.parse(dump)
+    assert c["invalid"] == 0, c
+    assert len(arr) == c["processed"] + c["missing"], (len(arr), c)
+    print(f"PASS dump format: raw file is a valid JSON array of {len(arr)} objects; "
+          f"streaming parse recovers the same {c['processed'] + c['missing']} records")
+
+
 if __name__ == "__main__":
     test_planted_bad_lines_are_caught()
     test_stray_comma_is_not_repaired_into_processed()
     test_counts_close_on_total()
+    test_dump_really_is_a_json_array()
     print("\nall tests passed")
